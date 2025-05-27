@@ -1,4 +1,8 @@
-﻿namespace GraphVisualization
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace GraphVisualization
 {
     public class Graph
     {
@@ -14,13 +18,21 @@
 
         public void AddEdge(int u, int v)
         {
-            if (!adjList.ContainsKey(u)) adjList[u] = new List<int>();
-            adjList[u].Add(v);
+            EnsureVertex(u);
+            EnsureVertex(v);
 
+            adjList[u].Add(v);
             if (!IsDirected)
             {
-                if (!adjList.ContainsKey(v)) adjList[v] = new List<int>();
                 adjList[v].Add(u);
+            }
+        }
+
+        public void EnsureVertex(int vertex)
+        {
+            if (!adjList.ContainsKey(vertex))
+            {
+                adjList[vertex] = new List<int>();
             }
         }
 

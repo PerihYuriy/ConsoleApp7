@@ -20,63 +20,89 @@ namespace GraphVisualization
         public MainWindow()
         {
             InitializeComponent();
-            BuildAndDrawGraph();
+            InitializeEmptyGraph();
         }
 
-        private void BuildAndDrawGraph()
+        private void InitializeEmptyGraph()
         {
-            // --- 1) Build a more irregular static graph (10 nodes) ---
             graph = new Graph();
-            // some random-looking connections (but fixed)
-            graph.AddEdge(0, 3);
-            graph.AddEdge(0, 7);
-            graph.AddEdge(1, 2);
-            graph.AddEdge(1, 5);
-            graph.AddEdge(1, 9);
-            graph.AddEdge(2, 4);
-            graph.AddEdge(2, 6);
-            graph.AddEdge(3, 4);
-            graph.AddEdge(3, 8);
-            graph.AddEdge(4, 7);
-            graph.AddEdge(5, 6);
-            graph.AddEdge(5, 8);
-            graph.AddEdge(6, 9);
-            graph.AddEdge(7, 9);
-            graph.AddEdge(8, 0);
-
-            // --- 2) Log adjacency list ---
-            Log("Список суміжності графа:");
-            foreach (var u in graph.Vertices)
-                Log($"  Вершина {u}: {string.Join(" ", graph.Adjacent(u))}");
-            Log("");
-
-            // --- 3) Log edges ---
-            Log("Список ребер:");
-            foreach (var u in graph.Vertices)
-                foreach (var v in graph.Adjacent(u))
-                    if (u < v)  // undirected
-                        Log($"  {u} --- {v}");
-            Log("");
-
-            // --- 4) Prepare for drawing + then draw when ready ---
             positions = new Dictionary<int, Point>();
             edgeLines = new Dictionary<(int, int), Line>();
             nodeEllipses = new Dictionary<int, Ellipse>();
 
-            Loaded += (_, __) =>
+            Log("Програма запущена. Додайте вершини та ребра для створення графа.");
+            Log("");
+        }
+
+        private void LoadDemoGraph()
+        {
+            graph = new Graph();
+            var demoEdges = new[] {
+                (0, 1), (0, 2), (1, 3),
+                (2, 4), (3, 4), (4, 5)
+        };
+
+            foreach (var (u, v) in demoEdges)
+            {
+                graph.AddEdge(u, v);
+            }
+
+            RefreshVisualization();
+            Log("Демо-граф завантажено.");
+        }
+
+        private void RefreshVisualization()
+        {
+            if (graph.Vertices.Count == 0)
+            {
+                GraphCanvas.Children.Clear();
+                return;
+            }
+
+            Log("Оновлено список суміжності:");
+            foreach (var u in graph.Vertices.OrderBy(x => x))
+            {
+                var adjacent = graph.Adjacent(u).OrderBy(x => x);
+                if (adjacent.Any())
+                    Log($"  Вершина {u}: {string.Join(" ", adjacent)}");
+                else
+                    Log($"  Вершина {u}: (ізольована)");
+            }
+            Log("");
+
+            if (GraphCanvas.ActualWidth > 0 && GraphCanvas.ActualHeight > 0)
             {
                 LayoutGraph();
                 DrawGraph();
-            };
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    LayoutGraph();
+                    DrawGraph();
+                }), DispatcherPriority.Loaded);
+            }
         }
-
 
         private void LayoutGraph()
         {
-            var verts = graph.Vertices;
+            var verts = graph.Vertices.OrderBy(x => x).ToList();
             int n = verts.Count;
-            double r = Math.Min(GraphCanvas.ActualWidth, GraphCanvas.ActualHeight) / 2 - 50;
-            var center = new Point(GraphCanvas.ActualWidth / 2, GraphCanvas.ActualHeight / 2);
+
+            if (n == 0) return;
+
+            double canvasWidth = Math.Max(GraphCanvas.ActualWidth, 400);
+            double canvasHeight = Math.Max(GraphCanvas.ActualHeight, 300);
+
+            if (n == 1)
+            {
+                positions[verts[0]] = new Point(canvasWidth / 2, canvasHeight / 2);
+                return;
+            }
+
+            double r = Math.Min(canvasWidth, canvasHeight) / 2 - 50;
+            var center = new Point(canvasWidth / 2, canvasHeight / 2);
 
             for (int i = 0; i < n; i++)
             {
@@ -90,26 +116,34 @@ namespace GraphVisualization
 
         private void DrawGraph()
         {
-            // draw edges
+            GraphCanvas.Children.Clear();
+            edgeLines.Clear();
+            nodeEllipses.Clear();
+
             foreach (var u in graph.Vertices)
+            {
                 foreach (var v in graph.Adjacent(u))
                 {
-                    var p1 = positions[u];
-                    var p2 = positions[v];
-                    var line = new Line
+                    if (u < v)
                     {
-                        X1 = p1.X,
-                        Y1 = p1.Y,
-                        X2 = p2.X,
-                        Y2 = p2.Y,
-                        Stroke = Brushes.LightGray,
-                        StrokeThickness = 2
-                    };
-                    GraphCanvas.Children.Add(line);
-                    edgeLines[(u, v)] = line;
+                        var p1 = positions[u];
+                        var p2 = positions[v];
+                        var line = new Line
+                        {
+                            X1 = p1.X,
+                            Y1 = p1.Y,
+                            X2 = p2.X,
+                            Y2 = p2.Y,
+                            Stroke = Brushes.LightGray,
+                            StrokeThickness = 2
+                        };
+                        GraphCanvas.Children.Add(line);
+                        edgeLines[(u, v)] = line;
+                        edgeLines[(v, u)] = line;
+                    }
                 }
+            }
 
-            // draw nodes + labels
             foreach (var v in graph.Vertices)
             {
                 var p = positions[v];
@@ -126,31 +160,115 @@ namespace GraphVisualization
                 GraphCanvas.Children.Add(circle);
                 nodeEllipses[v] = circle;
 
-                var lbl = new System.Windows.Controls.TextBlock
+                var lbl = new TextBlock
                 {
                     Text = v.ToString(),
-                    FontWeight = FontWeights.Bold
+                    FontWeight = FontWeights.Bold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
                 };
-                Canvas.SetLeft(lbl, p.X - 5);
-                Canvas.SetTop(lbl, p.Y - 10);
+                Canvas.SetLeft(lbl, p.X - 8);
+                Canvas.SetTop(lbl, p.Y - 8);
                 GraphCanvas.Children.Add(lbl);
             }
         }
 
-        private void HighlightStep(int current, int? from = null)
+        private void HighlightStep(int current)
         {
-            // reset colors
-            foreach (var L in edgeLines.Values) L.Stroke = Brushes.LightGray;
-            foreach (var N in nodeEllipses.Values) N.Fill = Brushes.LightBlue;
+            foreach (var node in nodeEllipses.Values)
+                node.Fill = Brushes.LightBlue;
 
-            // highlight node
-            nodeEllipses[current].Fill = Brushes.Red;
-            // highlight edge
-            if (from.HasValue && edgeLines.TryGetValue((from.Value, current), out var ln))
-                ln.Stroke = Brushes.Red;
+            if (nodeEllipses.ContainsKey(current))
+                nodeEllipses[current].Fill = Brushes.Red;
 
-            // force redraw
             Dispatcher.Invoke(DispatcherPriority.Render, new Action(() => { }));
+        }
+
+        private void AddVertexButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!int.TryParse(VertexBox.Text, out int vertex))
+                {
+                    MessageBox.Show("Введіть правильне числове значення для вершини.", "Помилка",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (graph.Vertices.Contains(vertex))
+                {
+                    MessageBox.Show($"Вершина {vertex} вже існує в графі.", "Увага",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                graph.EnsureVertex(vertex);
+                RefreshVisualization();
+                Log($"Додано вершину: {vertex}");
+                VertexBox.Clear();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Помилка при додаванні вершини: {ex.Message}", "Помилка",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void AddEdgeButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!int.TryParse(EdgeFromBox.Text, out int from) ||
+                    !int.TryParse(EdgeToBox.Text, out int to))
+                {
+                    MessageBox.Show("Введіть правильні числові значення для обох вершин ребра.", "Помилка",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (from == to)
+                {
+                    MessageBox.Show("Вершини ребра повинні бути різними (петлі не підтримуються).", "Помилка",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (graph.Adjacent(from).Contains(to))
+                {
+                    MessageBox.Show($"Ребро {from}-{to} вже існує в графі.", "Увага",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                graph.AddEdge(from, to);
+                RefreshVisualization();
+                Log($"Додано ребро: {from} --- {to}");
+                EdgeFromBox.Clear();
+                EdgeToBox.Clear();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Помилка при додаванні ребра: {ex.Message}", "Помилка",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ClearGraphButton_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show("Ви впевнені, що хочете видалити весь граф?", "Підтвердження",
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                InitializeEmptyGraph();
+                RefreshVisualization();
+                Log("Граф очищено.");
+            }
+        }
+
+        private void LoadDemoButton_Click(object sender, RoutedEventArgs e)
+        {
+            LoadDemoGraph();
         }
 
         private void DfsButton_Click(object sender, RoutedEventArgs e)
@@ -161,66 +279,112 @@ namespace GraphVisualization
 
         private void RunTraversal(bool isDfs)
         {
-            if (!int.TryParse(StartVertexBox.Text, out int start) ||
-                !graph.Vertices.Contains(start))
+            if (graph == null || graph.Vertices.Count == 0)
             {
-                MessageBox.Show("Enter a valid start vertex (0–9).");
+                MessageBox.Show("Спочатку створіть граф.", "Помилка",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // run on background to keep UI fluid
+            if (!int.TryParse(StartVertexBox.Text, out int start) ||
+                !graph.Vertices.Contains(start))
+            {
+                MessageBox.Show($"Введіть правильну початкову вершину. Доступні вершини: {string.Join(", ", graph.Vertices.OrderBy(x => x))}",
+                    "Помилка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 var visited = new HashSet<int>();
+                var allVertices = graph.Vertices.ToHashSet();
 
                 if (isDfs)
                 {
                     Log($"Починаємо DFS з вершини {start}");
-                    var stack = new Stack<(int? from, int node)>();
-                    stack.Push((null, start));
+                    RunDFS(start, visited);
 
-                    int step = 0;
-                    while (stack.Count > 0)
+                    var unvisited = allVertices.Except(visited).OrderBy(x => x).ToList();
+                    foreach (var vertex in unvisited)
                     {
-                        var (from, node) = stack.Pop();
-                        if (!visited.Add(node)) continue;
-                        step++;
-                        Log($"DFS крок {step}: відвідано вершину {node}");
-                        Dispatcher.Invoke(() => HighlightStep(node, from));
-                        Thread.Sleep(500);
-
-                        foreach (var nbr in graph.Adjacent(node).Reverse())
-                            if (!visited.Contains(nbr))
-                                stack.Push((node, nbr));
+                        if (!visited.Contains(vertex))
+                        {
+                            Log($"Знайдено нову компоненту зв'язності. Продовжуємо DFS з вершини {vertex}");
+                            RunDFS(vertex, visited);
+                        }
                     }
                     Log("DFS завершено.\n");
                 }
                 else
                 {
                     Log($"Починаємо BFS з вершини {start}");
-                    var queue = new Queue<(int? from, int node)>();
-                    queue.Enqueue((null, start));
+                    RunBFS(start, visited);
 
-                    int step = 0;
-                    while (queue.Count > 0)
+                    var unvisited = allVertices.Except(visited).OrderBy(x => x).ToList();
+                    foreach (var vertex in unvisited)
                     {
-                        var (from, node) = queue.Dequeue();
-                        if (!visited.Add(node)) continue;
-                        step++;
-                        Log($"BFS крок {step}: відвідано вершину {node}");
-                        Dispatcher.Invoke(() => HighlightStep(node, from));
-                        Thread.Sleep(500);
-
-                        foreach (var nbr in graph.Adjacent(node))
-                            if (!visited.Contains(nbr))
-                                queue.Enqueue((node, nbr));
+                        if (!visited.Contains(vertex))
+                        {
+                            Log($"Знайдено нову компоненту зв'язності. Продовжуємо BFS з вершини {vertex}");
+                            RunBFS(vertex, visited);
+                        }
                     }
                     Log("BFS завершено.\n");
                 }
             });
         }
 
-        // Helper to append a line to the LogBox on the UI thread
+        private void RunDFS(int start, HashSet<int> visited)
+        {
+            var stack = new Stack<int>();
+            stack.Push(start);
+            int step = 0;
+
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                if (!visited.Add(node)) continue;
+
+                step++;
+                Log($"DFS крок {step}: відвідано вершину {node}");
+                Dispatcher.Invoke(() => HighlightStep(node));
+                Thread.Sleep(1000);
+
+                var neighbors = graph.Adjacent(node).Where(n => !visited.Contains(n)).OrderByDescending(x => x);
+                foreach (var neighbor in neighbors)
+                {
+                    if (!visited.Contains(neighbor))
+                        stack.Push(neighbor);
+                }
+            }
+        }
+
+        private void RunBFS(int start, HashSet<int> visited)
+        {
+            var queue = new Queue<int>();
+            queue.Enqueue(start);
+            visited.Add(start);
+            int step = 0;
+
+            while (queue.Count > 0)
+            {
+                var node = queue.Dequeue();
+                step++;
+                Log($"BFS крок {step}: відвідано вершину {node}");
+                Dispatcher.Invoke(() => HighlightStep(node));
+                Thread.Sleep(1000);
+
+                foreach (var neighbor in graph.Adjacent(node).OrderBy(x => x))
+                {
+                    if (!visited.Contains(neighbor))
+                    {
+                        visited.Add(neighbor);
+                        queue.Enqueue(neighbor);
+                    }
+                }
+            }
+        }
+
         private void Log(string line)
         {
             Dispatcher.Invoke(() =>
@@ -228,6 +392,11 @@ namespace GraphVisualization
                 LogBox.AppendText(line + Environment.NewLine);
                 LogBox.ScrollToEnd();
             });
+        }
+
+        private void ClearLogButton_Click(object sender, RoutedEventArgs e)
+        {
+            LogBox.Clear();
         }
     }
 }
